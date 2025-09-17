@@ -1,117 +1,367 @@
-# web-demo-quickdraw-visualizer
+# Sketch-RNN-JS: A Generative Model for Vector Drawings
 
-TLDR: Google recently launched a web tool called Quick Draw which asks you to draw an object then tries to guess that object using a Neural Network AI. I "reverse-engineered" it and made my own drawing-guessing tool which leverages the same Google AI but adds some extra visualization.
+This repo contains a JavaScript implementation for `sketch-rnn`, the recurrent neural network model described in [Teaching Machines to Draw](https://research.googleblog.com/2017/04/teaching-machines-to-draw.html) and [A Neural Representation of Sketch Drawings](https://arxiv.org/abs/1704.03477). To try some of these demos now, please read our blog post [Draw Together with a Neural Network](https://magenta.tensorflow.org/sketch_rnn_demo).
 
-<img src="screenshots/screenshot_web-demo-quickdraw-visualizer.png" height="500px" width="auto">
+![Example Images](https://cdn.rawgit.com/tensorflow/magenta/master/magenta/models/sketch_rnn/assets/sketch_rnn_examples.svg)
 
-To check out the drawing tool, go to <a href="https://engelsjk.github.io/web-demo-quickdraw-visualizer/" target="_blank">https://engelsjk.github.io/web-demo-quickdraw-visualizer/</a> and start drawing! You'll quickly see a plot of "guesses" of what object you're drawing and their relative fit scores, all provided by the Google AI behind the Google Quick Draw tool.
+*Examples of vector images produced by this generative model.*
 
-<h1>Summary></h1>
+This document is an introduction on how to use the Sketch RNN model in Javascript to generate images.  The Sketch RNN model is trained on stroke-based vector drawings.  The model is able to handle unconditional generation of vector images.
 
-Google Quick Draw
+Alternatively, the model can also act as an autoencoder.  We can feed in an existing image into the model's encoder, and obtain a vector of 128 floating point numbers (the *latent vector*) that represents this image.  We can take this vector and feed it into the model's decoder, to generate a similar looking image.
 
-<a href="https://quickdraw.withgoogle.com/" target="_blank">https://quickdraw.withgoogle.com/</a>
+For more information, please read original [model](https://magenta.tensorflow.org/sketch_rnn) description.
 
-Initially, I was simply curious to know how the Google Quick Draw web tool worked, so I set out to investigate the client-server interactions which allow drawing and guessing. This investigation ended up consisting of four parts:
+## Using Sketch-RNN
 
-<ol>
-<li>How Does Quick Draw Actually Work?</li>
-<li>Can I Make a Chrome Extension that Visualizes More of the Quick Draw Data?</li>
-<li>Can I Use the Google AI API from Python?</li>
-<li>Can I Make My Own Web Tool Using the Google AI API?</li>
-</ol>
+In the .html files, we need to include sketch\_rnn.js. Our examples are built with p5.js, so we have also included p5 libraries here too. Please see this minimal example:
 
-<h1>Quick Draw</h1>
-First, I set out to look at the network calls of the Quick Draw web tool using the Chrome DevTools. When starting the Quick Draw page, it first asks you to draw an object which it will then try to guess.
+```html
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script language="javascript" type="text/javascript" src="lib/p5.min.js"></script>
+  <script language="javascript" type="text/javascript" src="lib/p5.dom.min.js"></script>
+  <script language="javascript" type="text/javascript" src="lib/numjs.js"></script>
+  <script language="javascript" type="text/javascript" src="sketch_rnn.js"></script>
+  <script language="javascript" type="text/javascript" src="my_sketch.js"></script>
+</style>
+</head>
+<body>
+  <div id="sketch"></div>
+</body>
+</html>
+```
 
-<img src="screenshots/screenshot_quickdraw-google-1.png" height="500px" width="auto">
+## Pre-trained models
 
-As you draw, a lot of POST requests are sent to what appears to be an API endpoint at <i>inputtools.google.com</i>.
+We have provided around 100 pre-trained sketch-rnn models. We have trained each model either as the decoder model only (with a .gen.json extension), or as the full variational auto-encoder model (with a .vae.json extension). Use the vae model if you plan on using latent vectors, otherwise use the gen models.
 
-<img src="screenshots/screenshot_quickdraw-google-2.png" height="500px" width="auto">
+The models are located in:
 
-(You can also see an OPTION request for each POST request, but I ignored those for this investigation assuming that I wouldn't be able to interpret their intent from the client side.)
+`https://storage.googleapis.com/quickdraw-models/sketchRNN/large_models/category.type.json`
 
-The most important part of these POST requests is the data payload itself, which consists of a JSON string with two main components: (i) the drawing canvas width/height and (ii) an "ink" array that consists of three arrays of numbers.
+where *category* is a quickdraw category such as *cat*, *dog*, *the\_mona\_lisa* etc., and *type* is either *gen* or *vae*. Some models are trained on more than one category, such as *catpig* or *crabrabbitfacepig*.
 
-<img src="screenshots/screenshot_quickdraw-google-3.png" height="500px" width="auto">
+i.e.
 
-<b>IMPORTANT: This "ink" array is obviously the data behind the canvas drawing in some format. It took a bit of trial-and-error, but I eventually figured out that the ink array includes values for X,Y as well as time in the following format:</b> 
+`https://storage.googleapis.com/quickdraw-models/sketchRNN/large_models/spider.vae.json`
 
-<code>ink=[[x1, x2, ...],[y1, y2, ...],[t1, t1, ...]]</code>
+or
 
-<b>This realization will come in very handy later on!</b>
+`https://storage.googleapis.com/quickdraw-models/sketchRNN/large_models/the_mona_lisa.gen.json`
 
-The response to each of these POST requests is some JSON data that includes (i) the results of the drawing guesses and (ii) what appears to be some details about the Google AI engine (e.g. call and compute latency).   
+Here is a list of all the models provided:
 
-<img src="screenshots/screenshot_quickdraw-google-4.png" height="500px" width="auto">
+|Models   | | | | |
+|---|---|---|---|---|
+|alarm_clock|ambulance|angel|ant|antyoga|
+|backpack|barn|basket|bear|bee|
+|beeflower|bicycle|bird|book|brain|
+|bridge|bulldozer|bus|butterfly|cactus|
+|calendar|castle|cat|catbus|catpig|
+|chair|couch|crab|crabchair|crabrabbitfacepig|
+|cruise_ship|diving_board|dog|dogbunny|dolphin|
+|duck|elephant|elephantpig|eye|face|
+|fan|fire_hydrant|firetruck|flamingo|flower|
+|floweryoga|frog|frogsofa|garden|hand|
+|hedgeberry|hedgehog|helicopter|kangaroo|key|
+|lantern|lighthouse|lion|lionsheep|lobster|
+|map|mermaid|monapassport|monkey|mosquito|
+|octopus|owl|paintbrush|palm_tree|parrot|
+|passport|peas|penguin|pig|pigsheep|
+|pineapple|pool|postcard|power_outlet|rabbit|
+|rabbitturtle|radio|radioface|rain|rhinoceros|
+|rifle|roller_coaster|sandwich|scorpion|sea_turtle|
+|sheep|skull|snail|snowflake|speedboat|
+|spider|squirrel|steak|stove|strawberry|
+|swan|swing_set|the_mona_lisa|tiger|toothbrush|
+|toothpaste|tractor|trombone|truck|whale|
+|windmill|yoga|yogabicycle|everything (※)||
 
-<h1>Chrome Extension</h1>
+※ *gen* only
 
-After realizing that the Quick Draw web tool had more data behind than it was letting on (specifically 20 guesses and scores for each API call), I wanted to visualize that data and my first thought was a small Chrome Extension showing a plot of the guesses and scores.
+You should load and parse the json files using whatever method you are comfortable with, and pass the parsed blob into the constructor of the sketch\_rnn object. We will get to this later.
 
-Having played around with Chrome Extensions before (<a href="https://github.com/engelsjk/chrome-extension-redpandamonium">Red Pandamonium</a>), I knew enough to be dangerous but not enough as I would soon find out. Not knowing anything about how to see HTTP request data in a Chrome Extension, I quickly found the <a href="https://developer.chrome.com/extensions/webRequest" target="_blank">chrome.webRequest API</a>. Since the webRequest API only runs in a Background Page, I whipped up a quick <code>manifest.json</code> with an empty <code>content.js</code> and a Background Page .js file. This Background Page only <code>console.log</code>s data from the different web request events, mostly to try and parse out request/response headers and body data. It only works on the Googe Quick Draw webtool and only grabs network events from the Google AI API URL. 
+We found it sometimes simpler to copy the contents of the json file and place it into an inline .js code so that the demo loads the model synchronously. Some of our examples below will do this.
 
-To see the <code>console.log</code>'d output of a Background Page, you need to Inspect View of the Background Page in the Chrome Extensions manager (<a href="chrome://extensions/" target="_blank">chrome://extensions/</a>). 
+## Run Pre-built Examples
 
-<img src="screenshots/screenshot_chrome-extension-quickdraw-requests-1.png" height="200px" width="auto">
+There are a number of proof-of-concept demos built to use the Sketch RNN model.  You can look at the corresponding code to study in detail how the model works.  To run these examples, it is recommended to use a simple local webserver, such as the http-server that can be obtained using npm, and load the local html file from the local server.  Some examples require this, since they need to dynamically load .json model files, and local static session doesn't allow for this in many browsers.
 
-This will bring up a separate console window and will start outputting web request data as you use the Quick Draw web tool.
+If you use the http-server, running something would be like putting `http://127.0.0.1:8080/basic_predict.html` in the address tab in Chrome.  For debugging, it is recommended you open a console tab on the side of the screen to look at the log messages.
 
-<img src="screenshots/screenshot_chrome-extension-quickdraw-requests-2.png" height="500px" width="auto">
+### 1) basic\_vae.html / basic\_vae.js
 
-Unfortunately, I failed to realize that the chrome.webRequest API does not allow access to response body data, which is where the Google AI API guessing results are contained. This threw a wrench into my plan because without that data in the Chrome Extension background, I obviously wouldn't be able to visualize it the way I wanted.
+This basic demo will generate an unconditional images on the web page given random latent vectors.  In addition, we demonstrate what an image looks like if we average the two latent vectors.
 
-***Repository for Chrome Extension***
-<a href="https://github.com/engelsjk/chrome-extension-quickdraw-requests" target="_blank">https://github.com/engelsjk/chrome-extension-quickdraw-requests</a>
+### 2) basic\_predict.html / basic\_predict.js
 
-<i>References</i>
-<ul>
-<li><a href="https://robots.thoughtbot.com/how-to-make-a-chrome-extension" target="_blank">https://robots.thoughtbot.com/how-to-make-a-chrome-extension</a></li>
-<li><a href="https://developer.chrome.com/extensions/webRequest" target="_blank">https://developer.chrome.com/extensions/webRequest</a></li>
-<li><a href="http://stackoverflow.com/questions/15502691/chrome-webrequest-not-working" target="_blank">http://stackoverflow.com/questions/15502691/chrome-webrequest-not-working</a></li>
-<li><a href="http://stackoverflow.com/questions/10257301/where-to-read-console-messages-from-background-js-in-a-chrome-extension" target="_blank">http://stackoverflow.com/questions/10257301/where-to-read-console-messages-from-background-js-in-a-chrome-extension</a></li>
-</ul>
+Similar to basic\_grid, this demo will keep on generating random vector images unconditionally.  Unlike basic\_vae, each point is generated per time frame (at 30 or 60 fps), while basic\_vae generates the entire image at once.  In basic, you can adjust the "temperature" variable, which controls the uncertainty of the strokes.
 
-<h1>Python</h1>
+### 3) simple_predict.html / simple_predict.js
 
-Realizing that I couldn't access the Google AI guessing results via a Chrome Extension, I was still curious to figure out a way to visualize the results more than what is shown on the Quick Draw web tool. Having played around with the HTTP request/response data, I wondered if that Google AI API would be accessible from something other than the Quick Draw web tool itself.
+This demo is also generates unconditionally, attempting to finish the drawing that the user starts.
+ If the user doesn't draw anything, the computer will keep on drawing stuff from scratch.
 
-Using the handy Chrome DevTool feature of copying network requests as cURL strings, I made a simple Python script to try and get a response from the Google AI API using the Requests package.
+Hitting restart will clear the current human drawing and start from scratch.
 
-I manually recreated the structure of the cURL string into the necessary Requests format. I copied the "ink" array of X-Y-Time data from a previous Quick Draw network call but made it a variable in the Python script in case I wanted to try out different drawing data. Then, I just sent the POST request with the data payload and...
+In this demo, you can also select other classes, like "cat", "snail", "duck", "bus", etc.  The demo will dynamically load the json files in the models directory but cache previously loaded json models.
 
-It worked! 
+### 4) predict.html / predict.js
 
-<img src="screenshots/screenshot_python-test-quickdraw-api.png" height="400px" width="auto">
+Same as the previous demo, but made to be interactive so the user can draw the beginning of a sketch on the canvas. Similar to the first [AI experiment](https://magenta.tensorflow.org/sketch-rnn-demo).
 
-Now, maybe this shouldn't have come as a surprise to me but it was an exciting realization nonetheless. Knowing that I can use the Google AI API outside of the Quick Draw web tool, I decided to make my own version...
+### 5 interp.html / interp.js
 
-***Repository for Chrome Extension***
-<a href="https://github.com/engelsjk/python-test-googledraw-api" target="_blank">https://github.com/engelsjk/python-test-googledraw-api</a>
+This demo uses the conditional generative model, and samples 2 different images (using 2 latent space vectors encoded by samples from the evaluation set).  These 2 auto-encoded images will be displayed at two sides of the screen, and the images generated in between the 2 sides will be the interpolated images based off linear-interpolation of the 128-dim latent vectors.  In the future, for better effect, spherical interpolation rather than linear can be used.
 
-<h1>Quick Draw Visualizer</h1>
+### 6) multi_vae.html / multi_vae.js
 
-Having dug into the Google Quick Draw web tool, I knew that they were using <a href="http://paperjs.org/about/" target="_blank">Paper.js</a> as the canvas drawing framework. Figuring that was as good a place as any to start, I quickly found a basic Paper.js drawing app on Codepen.io to use as a starting point.
+The demo is a variational autoencoder built to mimic your drawings and produce similar drawings. You are to draw a complete drawing of a specified object. After you draw a complete sketch inside the area on the left, hit the auto-encode button and the model will start drawing similar sketches inside the smaller boxes on the right. Rather than drawing a perfect duplicate copy of your drawing, the model will try to mimic your drawing instead. You can experiment drawing objects that are not the category you are supposed to draw, and see how the model interprets your drawing. For example, try to draw a cat, and have a model trained to draw crabs generate cat-like crabs.
 
-The first trick to figure out was how to generate the 3-vector "ink" array for the API data payload. It was simple enough to create a mouse-drag event listener which built up the XY coordinates from the canvas element as a user draws, but the time array was the tricky part. The timestamp for the event listener is in epoch milliseconds but the "ink" time array appeared to be milliseconds since "pen hit the paper", so to speak. I ended up inititalizing the time array starting at 0, calculating the time delta in milliseconds between subsequent event listeners, and then building up the time array by adding the time delta to the last value in the time array. This time array only resets back to <i>t_0 = 0</i> when the user CLEARS the canvas.
+### 7) multi_predict.html / multi_predict.js
 
-Another trick involving time was figuring out how often to call the Google AI API. The mouse drag event listener can fire on the order of 10's of milliseconds, but calling the Google AI API that often would be overkill. I didn't dig through the Google Quick Draw source code enough to identify how often they're calling the API, but I settled on a delay of 250 milliseconds between each API call. This seems to work well in terms of the plotting visualization, which is updated each time a new API call is made.
+The demo is similar to `simple_predict`. In this version, you will draw the beginning of a sketch inside the area on the left, and the model will predict the rest of the drawing inside the smaller boxes on the right. This way, you can see a variety of different endings predicted by the model. You can also choose different categories to get the model to draw different objects based on the same incomplete starting sketch. For example, you can get the model to draw things like square cats or circular trucks. You can always interrupt the model and continue working on your drawing inside the area on the left, and have the model continually predict where you left off afterwards.
 
-The last trick was manipuating the data structure of the guessed results (guessed object name and guess score) that are returned by the Google AI API call in order to plot the results. I settled on using <a href="http://www.highcharts.com/" target="_blank">Highchart.js</a> for plotting since I'm familiar with it and it seemed to have the easiest method of creating multiple line series. In order to capture all possible guesses that could be returned by the API, I just used an object (<code>d_scores</code>)where each guessed object name is a different key. The value of each key is an array of  guess scores with a length equal to the total number of guesses. Anytime an API call is returned, there are 20 guessed object names and their associated scores, so I just loop through them all and check if the guessed object name already exists in <code>d_scores</code>. If it does, append the new guess score to that key-value array. If it doesn't, append <code>null</code>. Then, to keep up with the key-value arrays of guessed object names that weren't returned by that API call, loop through each key in <code>d_scores</code> and if it wasn't in the API return, append <code>null</code>. The result of this is a full set of all guessed object names with arrays of guess scores, where all lengths are equal to the total number of guesse at all points in time. This set can easily be passed to Highcharts as the data input for a multiple data series line chart.
+### 8) simplify_lines.html / simplify_lines.js
 
-<img src="screenshots/screenshot_quickdraw-google-1.png" height="500px" width="auto">
+This one does not use a machine learning model at all.  We demonstrate how  data\_tool.js is used to help us simplify lines.  When you draw something on the screen, after you release the mouse, the line you have just drawn will be automatically simplified using the RDP algorithm with an epsilon parameter of 2.0.  All models are trained to assume simplified line data with epsilon 2.0, so for best effect it is wise to convert all input data with `DataTool.simplify_lines()` function (a very efficient JS implementation of RDP), before using `DataTool.lines_to_strokes()` to convert to stroke-based dataformat for sketch\_rnn.js model to process.
 
-<i>References</i>
-<ul>
-<li><a href="https://codepen.io/anon/pen/ObmQmB" target="_blank">https://codepen.io/anon/pen/ObmQmB</a></li>
-</ul>
+## Usage of Sketch RNN model
 
-<h1>Conclusion</h1>
+### Pre-trained weight files
 
-Overall, this was a great learning experience. Whenever I see a new interesting web tool, I find myself going straight to Chrome DevTools to see what network calls are being made. In the case of the Google Quick Draw tool, the combination of realizing that the drawing guesses were being made by an API call, that the API response contained more information than was being displayed in the web tool, and the fact that the "open" API could be called from origins other than the Quick Draw tool made this a compelling project to piece together.
+The RNN model has 2 modes: unconditional and conditional generation.  Unconditional generation means the model will just generate a random vector image from scratch and not use any latent vectors as an input.  Conditional generation mode requires a latent vector (128-dim) as an input, and whatever the model generates will be defined by those 128 numbers that can control various aspects of the image.
 
-The visualizer web tool I made is no doubt clunky and could use some cleaning up (API handling, visualization, data structure generation, etc). But for a project that went from looking at HTTP responses in a Google web tool to building my own visualizer in less than a week over Thanksgiving holiday, I'm very happy with it!
+Whether conditional or not, all of the raw weights of these models are individually stored as .json files inside the models directory.  For example, for the 'butterfly' class, there are 2 models that come pretrained:
 
+butterfly.gen.json - unconditional model
 
+butterfly.vae.json - conditional model
 
+In addition to the neural network weight matrices, there are several meta information stored in each of these files, including the version of the model, name of the class, the actual reconstruction and KL losses obtained for the evaluation set, the size of the training set used, the scale factor used to normalize the data, etc.
+
+Some of these models are also stored for convenience as .js format, in case you just want to load a single model synchronously within the context of a pure static website demo.
+
+### Sketch RNN
+
+The main model is stored inside sketch\_rnn.js.  Before using the model, you need some method to import the desired .json pre-trained weight file, and parse that into a JS object first.
+
+To create a model:
+
+```javascript
+var model_data = Parsed_JSON_file_of_pretrained_weights();
+var model = new SketchRNN(model_data); // this creates your model using the pre-trained weights inside model_data
+```
+
+Currently, once you create a model, you cannot replace the weights with another JSON file, and must instead destroy this object and create another new SketchRNN object using another model_data.
+
+To view the meta information for the pre_trained weights, just do a console.log(model.info) to dump it out.
+
+### Scale Factors
+
+When training the models, all the offset data has been normalized to have a standard deviation of 1.0 on the training set, after simplifying the strokes.  Neural nets work best when training on normalized data.  However, the original data recorded with the QuickDraw web app stored everything as pixels, which was scaled down so that on average the stroke offsets are ~ 1.0 length.  Thus each dataclass has its own `scale_factors` to scale down, and these numbers are usually between 60 to 120 depending on the dataset.  These scale factors are stored into `model.info.scale_factor`.  The model will assume all inputs and outputs to be in pixel space, not normalized space, and will do all the scaling for you.  You can modify these in the model using `model.set_scale_factor()`, but it is not recommended.  Rather than overwriting the `scale_factor`, modify the pixel_factor instead, as described in the next paragraph.
+
+If using PaperJS, it is recommended that you leave everything as it is.  When using P5.JS, all the recorded data looks much bigger compared to the original app by a factor of exactly 2, and this is likely due to anti-aliasing functionality of web browsers.  Hence the extra scaling factor for the model called `pixel_factor`.  If you want to make interactive apps and receive realtime drawing data from the user, and you are using PaperJS, it is best to set do a `model.set_pixel_factor(1.0)`.  For p5.js, do a `model.set_pixel_factor(2.0)`.  For non-interactive applications, using a larger `set_pixel_factor` will reduce the size of the generated image.
+
+### Line Data vs Stroke Data
+
+Data collected by the original quickdraw app are stored in the below format, which is a list of list of ["x", "y"] pixel points.
+
+```
+[[["x": 123, "y": 456], ["x": 127, "y": 454], ["x": 137, "y": 450], ["x": 147, "y": 440],  ...], ...]
+```
+
+The first thing to do is to convert this format into line format, and get rid of the "x" and "y" orderings.  In the Line Data format, x always come before y:
+
+```
+Line Data: [[[123, 456], [127, 454], [137, 450], [147, 440],  ...], ...]
+```
+
+With the data\_tool.js, this Line Data format must be first simplified using `simplify_lines` or `simplify_line` (depending if it is a list of polylines or just a single polyline) first.  Afterwards, the simplified line will be fed into lines_to_strokes to convert into the Stroke Data format used by the model.
+
+In the Stroke Data format, we assume the drawing starts at the origin, and store only the offset points from the previous location.  The format is 2 dimensional, rather than 3 dimensional as in the Line Data format:
+
+Each row of the stroke will be 5 elements:
+
+```
+[dx, dy, p0, p1, p2]
+```
+
+`dx, dy` are the offsets in pixels from the previous point.
+
+`p0, p1, p2` are binary values, and only one of them will be 1, the other 2 must be 0.
+
+```
+p0 = 1 means the pen stays on the paper at the next stroke.
+p1 = 1 means the pen will is now above the paper after this stroke.  The next stroke will be the start of a new line.
+p2 = 1 means the drawing has stopped.  Stop drawing anything!
+```
+
+The drawing will be decomposed into a list of `[dx, dy, p0, p1, p2]` strokes.
+
+The mapping from Line Data to Stroke Data will lose the information about the starting position of the drawing, so you may want to record `LineData[0][0]` to keep this info.
+
+## Unconditional Generation of Vector Images
+
+### Unconditional Generation - Everything at once
+
+Now that the preliminaries of data format and line simplification is out of the way, let's generate some vector images.
+
+The most basic way to generate a vector image is to use an unconditional model, ie loading `ant.gen.json` into `model_data` and creating a `model = new SketchRNN(model_data)`;
+
+To generate an entire drawing, as stroke data format:
+```javascript
+var example = model.generate();
+```
+And draw that out using your favourite method onto the canvas, or as svg's.  That's it!
+
+There are more bells and whistles though.  You can specify a temperature parameter to specify the uncertainty and amount of variation of the image.  I recommend keeping this parameter between 0.1 to 1.0.
+```javascript
+var temperature = 0.40; // or can be from a DOM slider bar normalized to 0.1 -> 1.0.
+var example = model.generate(temperature);
+
+draw_example(example, 60, 100, new p.color(185, 23, 96)); // my custom method in basic_grid.js for p5.js
+```
+If you have written a simple `draw_example` routine like me (i.e. in basic\_predict.js), and want to center and scale the image before rendering it, there are some tools in the model to do this.
+
+Say you have generated a cat using already using example = `model.generate(temperature)`, and want to draw that cat into a 100x100px bounding box between (10, 50) and (110, 150).  You can scale the image first, and then center it before plotting it out.
+```javascript
+var mod_example = model.scale_drawing(example, 100); // scales the drawing proportionally to have max size of 100px
+mod_example = model.center_drawing(example)
+draw_example(mod_example, 60, 100, new p.color(185, 23, 96));
+```
+This will draw a scaled drawing to fill the bounding box and draw it at the center.  Note that this creates a new list called mod_example to store the modified version in order to keep the original example list unmodified.
+
+### Unconditional Generation - One Stroke at a Time
+
+If you want to get the model to generate a stroke at a time, you can use the previous method to pre-generate the entire image, and then plot it out once every 1/60 seconds.  Alternatively, you may want to distribute the computing power and generate on the fly.  This is useful for interactive applications.
+
+To generate a stroke at a time, let's study basic.js, a p5.js example.  Almost pseudo-code:
+```javascript
+var model;
+var dx, dy; // offsets of the pen strokes, in pixels
+var pen_down, pen_up, pen_end; // keep track of whether pen is touching paper
+var x, y; // absolute coordinates on the screen of where the pen is
+var prev_pen = [1, 0, 0]; // group all p0, p1, p2 together
+var rnn_state; // store the hidden states of rnn's neurons
+var pdf; // store all the parameters of a mixture-density distribution
+var temperature = 0.65; // controls the amount of uncertainty of the model
+var line_color;
+
+var setup = function() {
+  model = new SketchRNN(model_data); // assume we have a model_data
+  p.createCanvas(screen_width, screen_height);
+  p.frameRate(60);
+
+  // initialize the scale factor for the model. Bigger -> large outputs
+  model.set_pixel_factor(2.0);
+
+  // initialize pen's states to zero.
+  [dx, dy, pen_down, pen_up, pen_end] = model.zero_input(); // the pen's states
+
+  // zero out the rnn's initial states
+  rnn_state = model.zero_state();
+
+  // define color of line
+  line_color = p.color(p.random(64, 224), p.random(64, 224), p.random(64, 224));
+};
+
+var draw = function() {
+  // see if we finished drawing
+  if (prev_pen[2] == 1) {
+    p.noLoop(); // stop drawing
+    return;
+  }
+
+  // using the previous pen states, and hidden state, get next hidden state
+  // the below line takes the most CPU power, especially for large models.
+  rnn_state = model.update([dx, dy, pen_down, pen_up, pen_end], rnn_state);
+
+  // get the parameters of the probability distribution (pdf) from hidden state
+  pdf = model.get_pdf(rnn_state);
+
+  // sample the next pen's states from our probability distribution
+  [dx, dy, pen_down, pen_up, pen_end] = model.sample(pdf, temperature);
+
+  // only draw on the paper if the pen is touching the paper
+  if (prev_pen[0] == 1) {
+    p.stroke(line_color);
+    p.strokeWeight(2.0);
+    p.line(x, y, x+dx, y+dy); // draw line connecting prev point to current point.
+  }
+
+  // update the absolute coordinates from the offsets
+  x += dx;
+  y += dy;
+
+  // update the previous pen's state to the current one we just sampled
+  prev_pen = [pen_down, pen_up, pen_end];
+};
+```
+In the above example, using p5.js framework, the setup method is called first to initialize everything.  Afterwards, `draw()` is called 60 times a second, until `noLoop()` is called when we finish.  If you want to use the same model to draw other things again in the same session, just reinitialize the `rnn_state` like in the `setup()` function.  You should use another routine like `init()` or `restart()` to do this and not rely on the p5.js `setup()` routine.
+
+## Variational Autoencoder - Conditional Generation of Vector Images
+
+In this section, you will see how to use the model to encode a given vector image into a 128-dimension vector of floating point numbers (the "latent vector" Z), and also how to take a given Z (which can be either previously encoded, modified by the user, or even entirely generated), and decode it into a vector image.
+
+To create a model, say from the cat class, you must choose between one of ant\_vae.json.
+
+### Encoding a Vector Image into Latent Space
+
+The encoding function, by itself, may be useful for t-sne or clustering applications.  To encode an image from the raw quickdraw data, it must first be converted to stroke data format as described earlier using DataTool object.
+
+1. removal of "x", "y" from data, and put into list of polylines in [x, y]'s
+2. simplify the line with DataTool.simplify_lines
+3. convert the line to stroke format using DataTool.lines_to_strokes
+
+After this process, say if you store the final example in a variable called example, you can encode this example to latent space using:
+```javascript
+var z = model.encode(example);
+```
+Unlike the traditional VAE paper, z is deterministic for a given example.  If we want to encode like the original VAE, and make z be a random variable, you can use an optional temperature element:
+```javascript
+var z = model.encode(example, encoding_temperature); // encoding_temperature between 0 and 1.
+```
+The 2nd method provides more artistic variation, but which is best for you depends on your application.  If you are doing clustering and prefer more certainty, then the default method may be better and easier to debug.
+
+If you collect a group of z's, you can do PCA or t-sne or other clustering methods to analyze your data, and even use the z's for classification.  As we may upgrade the model weights in the future, each model has a versioning system stored in model.info.version, so you may want to keep track of the model version with the z's of each class if you intend to save them to use at a later point.
+
+### Decoding a Latent Vector into a Vector Image
+
+Assume you obtained z earlier via encoding, you can convert it back into a vector image like in the below:
+```javascript
+var reconstruction = model.decode(z, temperature); // temperature between 0.01 to 1.0 recommended.
+```
+The process of reconstruction is also a stochastic process.  This means for a given z, you can, running model.decode a few times will give you different reconstruction images.  Keeping temperature = 0.01-0.1 will give you generally very similar images and this is useful for animation applications.
+
+For models with very low KL loss, ie < 0.50, you can even sample z from a gaussian distribution and use that z to produce a legit vector image.  To sample z from a gaussian distribution:
+```javascript
+var z = model.random_latent_vector();
+var reconstruction = model.decode(z, temperature);
+```
+For some applications, you may want to bound your latent vector to a space between 0.01 to 0.99 so that everything can fit into a rectangular screen (as in interp.html/interp.js). 
+
+# Citation
+
+If you find this project useful for academic purposes, please cite it as:
+
+```
+@ARTICLE{sketchrnn,
+  author          = {{Ha}, David and {Eck}, Douglas},
+  title           = "{A Neural Representation of Sketch Drawings}",
+  journal         = {ArXiv e-prints},
+  archivePrefix   = "arXiv",
+  eprinttype      = {arxiv},
+  eprint          = {1704.03477},
+  primaryClass    = "cs.NE",
+  keywords        = {Computer Science - Neural and Evolutionary Computing, Computer Science - Learning, Statistics - Machine Learning},
+  year            = 2017,
+  month           = apr,
+}
+```
+
+[arXiv]: https://arxiv.org/abs/1704.03477
+[blog]: https://research.googleblog.com/2017/04/teaching-machines-to-draw.html
+[dataset]: https://magenta.tensorflow.org/datasets/sketchrnn
